@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "otter-local-transcribe"
+version = "0.2.0"
+description = "Local Whisper transcription app with CLI, desktop GUI, and local web UI."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "faster-whisper>=1.1.0",
+]
+
+[project.optional-dependencies]
+diarization = [
+  "whisperx>=3.2.0",
+]
+docx = [
+  "python-docx>=1.1.2",
+]
+web = [
+  "fastapi>=0.115.0",
+  "uvicorn>=0.30.0",
+  "python-multipart>=0.0.9",
+]
+
+[project.scripts]
+otter-local = "otter_local.cli:main"
+otter-local-gui = "otter_local.gui:main"
+otter-local-web = "otter_local.web:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+otter_local = ["web_index.html"]

@@ -1,0 +1,965 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Otter Local Web</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap');
+    :root {
+      --bg-1: #f3efe6;
+      --bg-2: #d8e7f7;
+      --bg-3: #f6d8c7;
+      --ink: #1e262b;
+      --muted: #4f5b63;
+      --card: rgba(255,255,255,0.78);
+      --edge: rgba(30,38,43,0.12);
+      --accent: #0f766e;
+      --accent-2: #f97316;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: 'Space Grotesk', sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 10% 10%, rgba(15,118,110,0.2), transparent 35%),
+        radial-gradient(circle at 85% 20%, rgba(249,115,22,0.22), transparent 40%),
+        linear-gradient(150deg, var(--bg-1), var(--bg-2) 60%, var(--bg-3));
+      animation: backgroundDrift 12s ease-in-out infinite alternate;
+    }
+
+    @keyframes backgroundDrift {
+      from { background-position: 0% 0%, 100% 0%, 0% 0%; }
+      to { background-position: 10% 15%, 90% 5%, 5% 20%; }
+    }
+
+    .shell {
+      max-width: 1200px;
+      margin: 24px auto;
+      padding: 0 16px 24px;
+      display: grid;
+      gap: 16px;
+      grid-template-columns: 360px 1fr;
+    }
+
+    .card {
+      border: 1px solid var(--edge);
+      background: var(--card);
+      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      box-shadow: 0 20px 50px rgba(15, 23, 42, 0.12);
+      overflow: hidden;
+    }
+
+    .card h2 {
+      margin: 0;
+      padding: 16px 18px;
+      font-size: 1.05rem;
+      letter-spacing: 0.02em;
+      border-bottom: 1px solid var(--edge);
+      background: linear-gradient(90deg, rgba(15,118,110,0.08), rgba(249,115,22,0.08));
+    }
+
+    .panel {
+      padding: 16px 18px 18px;
+      display: grid;
+      gap: 12px;
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    input, select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--edge);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.85);
+      color: var(--ink);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.9rem;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .check-grid {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--edge);
+      border-radius: 999px;
+      padding: 5px 10px;
+      background: rgba(255,255,255,0.9);
+      font-size: 0.85rem;
+      color: var(--ink);
+    }
+
+    .pill input { width: auto; margin: 0; }
+
+    .submit {
+      border: 0;
+      border-radius: 12px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      color: white;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      padding: 12px;
+      cursor: pointer;
+      transition: transform .18s ease, box-shadow .18s ease;
+    }
+
+    .submit:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 18px rgba(15,118,110,0.28);
+    }
+
+    .status-note {
+      min-height: 20px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .live-box {
+      border: 1px dashed var(--edge);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.72);
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .live-note {
+      margin: 0;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .live-transcript {
+      width: 100%;
+      min-height: 160px;
+      max-height: 260px;
+      resize: vertical;
+      border: 1px solid var(--edge);
+      border-radius: 10px;
+      background: rgba(248,250,252,0.95);
+      padding: 10px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.78rem;
+      line-height: 1.35;
+      color: #1f2937;
+    }
+
+    .jobs-wrap {
+      padding: 14px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .jobs-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--edge);
+      background: linear-gradient(90deg, rgba(15,118,110,0.08), rgba(249,115,22,0.08));
+    }
+
+    .jobs-toolbar h2 {
+      margin: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+    }
+
+    .jobs-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .small-btn {
+      border: 1px solid var(--edge);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.95);
+      color: var(--ink);
+      font-size: 0.78rem;
+      padding: 4px 10px;
+      cursor: pointer;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+
+    .job {
+      border: 1px solid var(--edge);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.78);
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+      animation: cardRise .25s ease;
+    }
+
+    @keyframes cardRise {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .job-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.82rem;
+    }
+
+    .state {
+      border-radius: 999px;
+      padding: 2px 9px;
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      font-weight: 600;
+      color: white;
+    }
+
+    .state-queued { background: #64748b; }
+    .state-running { background: #0f766e; }
+    .state-completed { background: #15803d; }
+    .state-failed { background: #b91c1c; }
+    .state-canceled { background: #7c3aed; }
+
+    .progress {
+      height: 8px;
+      background: #e2e8f0;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .progress > span {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    }
+
+    .progress-file {
+      height: 6px;
+      background: #dbeafe;
+    }
+
+    .progress-file > span {
+      background: linear-gradient(90deg, #0ea5e9, #22c55e);
+    }
+
+    .current-file {
+      font-size: 0.81rem;
+      color: #334155;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .action-btn {
+      border: 1px solid var(--edge);
+      border-radius: 999px;
+      padding: 4px 10px;
+      background: rgba(255,255,255,0.95);
+      color: var(--ink);
+      font-size: 0.78rem;
+      cursor: pointer;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+
+    .action-btn.cancel {
+      border-color: #fecaca;
+      color: #b91c1c;
+    }
+
+    .action-btn.retry {
+      border-color: #bbf7d0;
+      color: #166534;
+    }
+
+    .action-btn.delete {
+      border-color: #fbcfe8;
+      color: #9f1239;
+    }
+
+    .action-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .links a {
+      text-decoration: none;
+      font-size: 0.82rem;
+      border: 1px solid var(--edge);
+      border-radius: 999px;
+      padding: 4px 10px;
+      color: var(--ink);
+      background: rgba(255,255,255,0.95);
+    }
+
+    .logs {
+      margin: 0;
+      padding: 10px;
+      border-radius: 10px;
+      border: 1px dashed var(--edge);
+      background: rgba(248,250,252,0.8);
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.75rem;
+      line-height: 1.35;
+      max-height: 110px;
+      overflow: auto;
+    }
+
+    @media (max-width: 960px) {
+      .shell { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <section class="card">
+      <h2>New Transcription Job</h2>
+      <form class="panel" id="jobForm">
+        <label>
+          Media files
+          <input type="file" id="files" name="files" multiple required>
+        </label>
+
+        <div class="row">
+          <label>
+            Model
+            <select name="model" id="model">
+              <option value="tiny">tiny</option>
+              <option value="base">base</option>
+              <option value="small" selected>small</option>
+              <option value="medium">medium</option>
+              <option value="large-v3">large-v3</option>
+            </select>
+          </label>
+
+          <label>
+            Diarization
+            <select name="diarization" id="diarization">
+              <option value="auto" selected>auto</option>
+              <option value="on">on</option>
+              <option value="off">off</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="row">
+          <label>
+            Language (optional)
+            <input type="text" name="language" id="language" placeholder="en">
+          </label>
+
+          <label>
+            Beam size
+            <input type="number" name="beam_size" id="beam_size" min="1" max="10" value="5">
+          </label>
+        </div>
+
+        <div class="row">
+          <label>
+            Min speakers
+            <input type="number" id="min_speakers" min="1" placeholder="optional">
+          </label>
+
+          <label>
+            Max speakers
+            <input type="number" id="max_speakers" min="1" placeholder="optional">
+          </label>
+        </div>
+
+        <label>
+          Speaker names (optional, comma-separated)
+          <input type="text" id="speaker_names" placeholder="Alice, Bob">
+        </label>
+
+        <label>
+          Hugging Face token (optional, for diarization)
+          <input type="password" id="hf_token" autocomplete="off">
+        </label>
+
+        <div>
+          <div style="font-size:0.9rem;color:var(--muted);margin-bottom:6px">Output formats</div>
+          <div class="check-grid" id="formatBox">
+            <label class="pill"><input type="checkbox" value="txt" checked>txt</label>
+            <label class="pill"><input type="checkbox" value="srt" checked>srt</label>
+            <label class="pill"><input type="checkbox" value="json" checked>json</label>
+            <label class="pill"><input type="checkbox" value="docx" checked>docx</label>
+          </div>
+        </div>
+
+        <label class="pill" style="width:max-content">
+          <input type="checkbox" id="no_vad">Disable VAD
+        </label>
+
+        <button class="submit" type="submit">Start Job</button>
+        <div class="status-note" id="statusNote"></div>
+
+        <div class="live-box">
+          <div style="font-size:0.92rem;font-weight:700">Live Microphone</div>
+          <p class="live-note">Transcribes mic input in small chunks while you speak. Live mode currently runs with diarization off for speed.</p>
+          <div class="actions">
+            <button class="action-btn retry" id="liveStartBtn" type="button">Start Live</button>
+            <button class="action-btn cancel" id="liveStopBtn" type="button" disabled>Stop Live</button>
+          </div>
+          <div class="status-note" id="liveStatus">Live session idle.</div>
+          <textarea id="liveTranscript" class="live-transcript" readonly placeholder="Live transcript will appear here..."></textarea>
+          <div class="links" id="liveArtifacts"></div>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="jobs-toolbar">
+        <h2>Jobs</h2>
+        <div class="jobs-controls">
+          <button class="small-btn" id="refreshJobsBtn" type="button">Refresh</button>
+          <label class="pill" style="margin:0">
+            <input type="checkbox" id="autoRefreshToggle">Auto (15s)
+          </label>
+        </div>
+      </div>
+      <div class="jobs-wrap" id="jobs"></div>
+    </section>
+  </div>
+
+  <script>
+    const jobsEl = document.getElementById('jobs');
+    const form = document.getElementById('jobForm');
+    const statusNote = document.getElementById('statusNote');
+    const refreshJobsBtn = document.getElementById('refreshJobsBtn');
+    const autoRefreshToggle = document.getElementById('autoRefreshToggle');
+    const liveStartBtn = document.getElementById('liveStartBtn');
+    const liveStopBtn = document.getElementById('liveStopBtn');
+    const liveStatus = document.getElementById('liveStatus');
+    const liveTranscript = document.getElementById('liveTranscript');
+    const liveArtifacts = document.getElementById('liveArtifacts');
+    let autoRefreshTimer = null;
+    let liveSessionId = null;
+    let liveRecorder = null;
+    let liveStream = null;
+    let liveQueue = Promise.resolve();
+    let liveChunkCounter = 0;
+    let liveInFlightChunks = 0;
+
+    function getFormats() {
+      const checks = Array.from(document.querySelectorAll('#formatBox input[type=checkbox]:checked'));
+      return checks.map(x => x.value).join(',');
+    }
+
+    function esc(text) {
+      return String(text)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;');
+    }
+
+    function formatEta(seconds) {
+      if (seconds == null || !Number.isFinite(seconds) || seconds < 0) {
+        return 'estimating...';
+      }
+      const rounded = Math.round(seconds);
+      const h = Math.floor(rounded / 3600);
+      const m = Math.floor((rounded % 3600) / 60);
+      const s = rounded % 60;
+      if (h > 0) return `${h}h ${m}m`;
+      if (m > 0) return `${m}m ${s}s`;
+      return `${s}s`;
+    }
+
+    function renderJobs(jobs) {
+      if (!jobs.length) {
+        jobsEl.innerHTML = '<div style="padding:6px;color:#4f5b63">No jobs yet.</div>';
+        return;
+      }
+
+      jobsEl.innerHTML = jobs.map(job => {
+        const pct = job.total_files > 0 ? Math.round((job.processed_files / job.total_files) * 100) : 0;
+        const filePct = Math.round((job.current_file_progress || 0) * 100);
+        const links = (job.artifacts || []).map(a =>
+          `<a href="${a.download_url}" target="_blank">${esc(a.source)} - ${esc(a.format)}</a>`
+        ).join('');
+
+        const currentFile = job.current_file
+          ? `<div class="current-file">Current: ${esc(job.current_file)} - ${filePct}%</div><div class="progress progress-file"><span style="width:${filePct}%"></span></div>`
+          : '';
+        const queueInfo = job.queue_position
+          ? `<div class="current-file">Queue position: #${job.queue_position}</div>`
+          : '';
+        const etaInfo = (job.status === 'queued' || job.status === 'running')
+          ? `<div class="current-file">ETA: ${formatEta(job.eta_seconds)}</div>`
+          : '';
+
+        const canceling = job.cancel_requested
+          ? '<div class="current-file" style="color:#b45309">Cancel requested...</div>'
+          : '';
+
+        const actions = `
+          <div class="actions">
+            ${job.can_cancel ? `<button class="action-btn cancel" data-action="cancel" data-job="${job.job_id}">Cancel</button>` : ''}
+            ${job.can_retry ? `<button class="action-btn retry" data-action="retry" data-job="${job.job_id}">Retry</button>` : ''}
+            ${job.can_delete ? `<button class="action-btn delete" data-action="delete" data-job="${job.job_id}">Delete</button>` : ''}
+          </div>
+        `;
+
+        const logs = (job.logs || []).slice(-8).map(line => esc(line)).join('\\n');
+        const error = job.error ? `<div style="color:#b91c1c;font-weight:600">${esc(job.error)}</div>` : '';
+
+        return `
+          <article class="job">
+            <div class="job-head">
+              <span>${esc(job.job_id)} - ${esc(job.created_at)}</span>
+              <span class="state state-${esc(job.status)}">${esc(job.status)}</span>
+            </div>
+            <div class="progress"><span style="width:${pct}%"></span></div>
+            ${currentFile}
+            ${queueInfo}
+            ${etaInfo}
+            ${canceling}
+            <div style="font-size:0.83rem;color:#4f5b63">${job.processed_files}/${job.total_files} files</div>
+            ${actions}
+            ${error}
+            <div class="links">${links}</div>
+            <pre class="logs">${logs}</pre>
+          </article>
+        `;
+      }).join('');
+    }
+
+    async function refreshJobs() {
+      try {
+        const res = await fetch('/api/jobs');
+        if (!res.ok) {
+          throw new Error('Failed to load jobs');
+        }
+        const data = await res.json();
+        renderJobs(data.jobs || []);
+      } catch (err) {
+        jobsEl.innerHTML = `<div style="padding:6px;color:#b91c1c">${esc(String(err))}</div>`;
+      }
+    }
+
+    function applyAutoRefresh() {
+      if (autoRefreshTimer !== null) {
+        window.clearInterval(autoRefreshTimer);
+        autoRefreshTimer = null;
+      }
+      if (autoRefreshToggle.checked) {
+        autoRefreshTimer = window.setInterval(refreshJobs, 15000);
+      }
+    }
+
+    function setLiveButtons(isRecording) {
+      liveStartBtn.disabled = isRecording;
+      liveStopBtn.disabled = !isRecording;
+    }
+
+    function isLocalhostHost(hostname) {
+      return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]';
+    }
+
+    async function getMicPermissionState() {
+      if (!navigator.permissions || !navigator.permissions.query) {
+        return null;
+      }
+      try {
+        const status = await navigator.permissions.query({ name: 'microphone' });
+        return status && status.state ? status.state : null;
+      } catch (_err) {
+        return null;
+      }
+    }
+
+    function describeMicError(err) {
+      const name = err && err.name ? String(err.name) : '';
+      if (name === 'NotAllowedError' || name === 'SecurityError') {
+        return 'Microphone access was denied. Allow microphone permission for this site and try again.';
+      }
+      if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+        return 'No microphone was found. Connect/enable a mic and retry.';
+      }
+      if (name === 'NotReadableError' || name === 'TrackStartError') {
+        return 'Microphone is busy or unavailable (possibly used by another app). Close other audio apps and retry.';
+      }
+      if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
+        return 'Requested microphone constraints are not supported on this device.';
+      }
+      const message = err && err.message ? String(err.message) : String(err || 'Unknown microphone error');
+      return `Microphone error: ${message}`;
+    }
+
+    function describeLiveStartError(err) {
+      const text = String(err || '');
+      if (text.includes('404') || text.includes('Not Found')) {
+        return 'Live API endpoint is missing on the running server. Restart the app from this project folder and hard-refresh the page.';
+      }
+      return text;
+    }
+
+    function renderLiveArtifactsList(artifacts) {
+      const links = (artifacts || []).map((item) =>
+        `<a href="${item.download_url}" target="_blank">${esc(item.name)} (${esc(item.format)})</a>`
+      ).join('');
+      liveArtifacts.innerHTML = links;
+    }
+
+    function renderLivePayload(payload) {
+      if (typeof payload.transcript_text === 'string') {
+        liveTranscript.value = payload.transcript_text;
+        liveTranscript.scrollTop = liveTranscript.scrollHeight;
+      }
+
+      renderLiveArtifactsList(payload.artifacts || []);
+      if (payload.status === 'completed') {
+        liveStatus.textContent = `Live session ${payload.session_id} completed (${payload.segment_count || 0} segments).`;
+      } else if (payload.status === 'failed') {
+        liveStatus.textContent = payload.error ? `Live failed: ${payload.error}` : 'Live session failed.';
+      } else {
+        const chunk = payload.chunk_index || 0;
+        const count = payload.segment_count || 0;
+        const pending = liveInFlightChunks > 0 ? ` Pending chunks: ${liveInFlightChunks}.` : '';
+        liveStatus.textContent = `Live session ${payload.session_id} chunk ${chunk} processed. Segments: ${count}.${pending}`;
+      }
+    }
+
+    function buildLiveFormData() {
+      const formats = getFormats();
+      if (!formats) {
+        throw new Error('Select at least one output format.');
+      }
+
+      const fd = new FormData();
+      fd.set('model', document.getElementById('model').value);
+      fd.set('language', document.getElementById('language').value);
+      fd.set('device', 'auto');
+      fd.set('compute_type', 'auto');
+      fd.set('beam_size', document.getElementById('beam_size').value || '5');
+      fd.set('no_vad', String(document.getElementById('no_vad').checked));
+      fd.set('formats', formats);
+      fd.set('diarization', 'off');
+      return fd;
+    }
+
+    function stopLiveTracks() {
+      if (liveStream) {
+        for (const track of liveStream.getTracks()) {
+          track.stop();
+        }
+      }
+      liveStream = null;
+    }
+
+    function queueLiveChunk(blob, index) {
+      if (!liveSessionId) {
+        return;
+      }
+
+      liveInFlightChunks += 1;
+      liveQueue = liveQueue.then(async () => {
+        if (!liveSessionId) {
+          return;
+        }
+
+        const fd = new FormData();
+        const ext = blob.type && blob.type.includes('ogg') ? 'ogg' : 'webm';
+        fd.append('chunk', blob, `chunk-${String(index).padStart(5, '0')}.${ext}`);
+
+        const res = await fetch(`/api/live/${liveSessionId}/chunk`, { method: 'POST', body: fd });
+        const payload = await res.json();
+        if (!res.ok) {
+          throw new Error(payload.detail || 'Live chunk failed');
+        }
+        renderLivePayload(payload);
+      }).catch((err) => {
+        liveStatus.textContent = `Live failed: ${String(err)}`;
+        if (liveRecorder && liveRecorder.state !== 'inactive') {
+          liveRecorder.stop();
+        } else {
+          stopLiveTracks();
+        }
+      }).finally(() => {
+        liveInFlightChunks = Math.max(0, liveInFlightChunks - 1);
+      });
+    }
+
+    async function finalizeLiveStop() {
+      const session = liveSessionId;
+      if (!session) {
+        setLiveButtons(false);
+        return;
+      }
+
+      try {
+        await liveQueue;
+        const res = await fetch(`/api/live/${session}/stop`, { method: 'POST' });
+        const payload = await res.json();
+        if (!res.ok) {
+          throw new Error(payload.detail || 'Failed to finalize live session');
+        }
+        renderLivePayload(payload);
+      } catch (err) {
+        liveStatus.textContent = String(err);
+      } finally {
+        liveSessionId = null;
+        liveRecorder = null;
+        stopLiveTracks();
+        setLiveButtons(false);
+      }
+    }
+
+    async function startLiveSession() {
+      if (liveSessionId || !window.MediaRecorder || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        if (!window.MediaRecorder) {
+          liveStatus.textContent = 'Live recording is not supported in this browser.';
+        }
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          liveStatus.textContent = 'Microphone capture is not supported in this browser.';
+        }
+        return;
+      }
+
+      if (!window.isSecureContext && !isLocalhostHost(window.location.hostname)) {
+        liveStatus.textContent = `Microphone requires HTTPS or localhost. Open this app via https://... or ${window.location.origin}.`;
+        return;
+      }
+
+      const permission = await getMicPermissionState();
+      if (permission === 'denied') {
+        liveStatus.textContent = 'Microphone permission is blocked in your browser settings for this site.';
+        return;
+      }
+
+      liveStatus.textContent = 'Requesting microphone access...';
+      renderLiveArtifactsList([]);
+
+      let fd = null;
+      try {
+        fd = buildLiveFormData();
+      } catch (err) {
+        liveStatus.textContent = String(err);
+        return;
+      }
+
+      try {
+        liveStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        stopLiveTracks();
+        liveSessionId = null;
+        liveRecorder = null;
+        setLiveButtons(false);
+        liveStatus.textContent = describeMicError(err);
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/live/start', { method: 'POST', body: fd });
+        let payload = null;
+        try {
+          payload = await res.json();
+        } catch (_err) {
+          const text = await res.text();
+          payload = { detail: text || null };
+        }
+        if (!res.ok) {
+          throw new Error(payload.detail || `Live API error (${res.status})`);
+        }
+
+        liveSessionId = payload.session_id;
+        liveChunkCounter = 0;
+        liveInFlightChunks = 0;
+        liveQueue = Promise.resolve();
+        liveTranscript.value = '';
+
+        const preferredMime = 'audio/webm;codecs=opus';
+        if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(preferredMime)) {
+          liveRecorder = new MediaRecorder(liveStream, { mimeType: preferredMime });
+        } else {
+          liveRecorder = new MediaRecorder(liveStream);
+        }
+
+        liveRecorder.addEventListener('dataavailable', (event) => {
+          if (!event.data || event.data.size <= 0 || !liveSessionId) {
+            return;
+          }
+          liveChunkCounter += 1;
+          queueLiveChunk(event.data, liveChunkCounter);
+        });
+
+        liveRecorder.addEventListener('stop', () => {
+          finalizeLiveStop();
+        });
+
+        setLiveButtons(true);
+        liveStatus.textContent = `Live session ${liveSessionId} started.`;
+        liveRecorder.start(3000);
+      } catch (err) {
+        stopLiveTracks();
+        liveSessionId = null;
+        liveRecorder = null;
+        setLiveButtons(false);
+        liveStatus.textContent = describeLiveStartError(err);
+      }
+    }
+
+    function stopLiveSession() {
+      if (!liveSessionId) {
+        return;
+      }
+      liveStatus.textContent = 'Stopping live session...';
+      setLiveButtons(false);
+      if (liveRecorder && liveRecorder.state !== 'inactive') {
+        liveRecorder.stop();
+      } else {
+        finalizeLiveStop();
+      }
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const fileInput = document.getElementById('files');
+      if (!fileInput.files.length) {
+        statusNote.textContent = 'Pick at least one file.';
+        return;
+      }
+
+      const formats = getFormats();
+      if (!formats) {
+        statusNote.textContent = 'Select at least one output format.';
+        return;
+      }
+
+      const fd = new FormData();
+      for (const file of fileInput.files) {
+        fd.append('files', file);
+      }
+
+      fd.set('model', document.getElementById('model').value);
+      fd.set('diarization', document.getElementById('diarization').value);
+      fd.set('language', document.getElementById('language').value);
+      fd.set('beam_size', document.getElementById('beam_size').value || '5');
+      fd.set('min_speakers', document.getElementById('min_speakers').value);
+      fd.set('max_speakers', document.getElementById('max_speakers').value);
+      fd.set('speaker_names', document.getElementById('speaker_names').value);
+      fd.set('hf_token', document.getElementById('hf_token').value);
+      fd.set('no_vad', String(document.getElementById('no_vad').checked));
+      fd.set('formats', formats);
+
+      statusNote.textContent = 'Submitting job...';
+      try {
+        const res = await fetch('/api/transcribe', { method: 'POST', body: fd });
+        const payload = await res.json();
+        if (!res.ok) {
+          throw new Error(payload.detail || 'Job submission failed');
+        }
+
+        statusNote.textContent = `Job ${payload.job_id} queued.`;
+        form.reset();
+        refreshJobs();
+      } catch (err) {
+        statusNote.textContent = String(err);
+      }
+    });
+
+    jobsEl.addEventListener('click', async (event) => {
+      const button = event.target.closest('button[data-action]');
+      if (!button) {
+        return;
+      }
+
+      const action = button.dataset.action;
+      const jobId = button.dataset.job;
+      if (!action || !jobId) {
+        return;
+      }
+
+      if (action === 'delete') {
+        const ok = window.confirm(`Delete job ${jobId} and its stored files?`);
+        if (!ok) {
+          return;
+        }
+      }
+
+      button.disabled = true;
+      try {
+        const endpoint = action === 'delete' ? `/api/jobs/${jobId}` : `/api/jobs/${jobId}/${action}`;
+        const method = action === 'delete' ? 'DELETE' : 'POST';
+        const res = await fetch(endpoint, { method });
+        const payload = await res.json();
+        if (!res.ok) {
+          throw new Error(payload.detail || `Failed to ${action} job`);
+        }
+
+        if (action === 'retry') {
+          statusNote.textContent = `Retry queued: ${payload.job_id}`;
+        } else if (action === 'delete') {
+          statusNote.textContent = `Deleted job ${jobId}.`;
+        } else {
+          statusNote.textContent = `Job ${jobId} cancel requested.`;
+        }
+        refreshJobs();
+      } catch (err) {
+        statusNote.textContent = String(err);
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    refreshJobsBtn.addEventListener('click', () => {
+      refreshJobs();
+    });
+
+    autoRefreshToggle.addEventListener('change', () => {
+      applyAutoRefresh();
+    });
+
+    liveStartBtn.addEventListener('click', () => {
+      startLiveSession();
+    });
+
+    liveStopBtn.addEventListener('click', () => {
+      stopLiveSession();
+    });
+
+    setLiveButtons(false);
+    refreshJobs();
+    applyAutoRefresh();
+  </script>
+</body>
+</html>
