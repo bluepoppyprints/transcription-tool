@@ -359,16 +359,23 @@
 
         <div class="row">
           <label>
-            Model
-            <select name="model" id="model">
-              <option value="tiny">tiny</option>
-              <option value="base">base</option>
-              <option value="small" selected>small</option>
-              <option value="medium">medium</option>
-              <option value="large-v3">large-v3</option>
+            ASR backend
+            <select name="backend" id="backend">
+              <option value="faster-whisper" selected>Faster-Whisper</option>
             </select>
           </label>
 
+          <label>
+            Model
+            <select name="model" id="model">
+              <option value="small" selected>small</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="status-note" id="backendStatus">Checking local backend availability...</div>
+
+        <div class="row">
           <label>
             Diarization
             <select name="diarization" id="diarization">
@@ -377,17 +384,22 @@
               <option value="off">off</option>
             </select>
           </label>
-        </div>
 
-        <div class="row">
           <label>
             Language (optional)
             <input type="text" name="language" id="language" placeholder="en">
           </label>
+        </div>
 
+        <div class="row">
           <label>
             Beam size
             <input type="number" name="beam_size" id="beam_size" min="1" max="10" value="5">
+          </label>
+
+          <label>
+            CPU threads
+            <input type="number" name="num_threads" id="num_threads" min="1" max="32" value="4">
           </label>
         </div>
 
@@ -406,6 +418,11 @@
         <label>
           Speaker names (optional, comma-separated)
           <input type="text" id="speaker_names" placeholder="Alice, Bob">
+        </label>
+
+        <label>
+          Hotwords / context terms (optional, comma-separated)
+          <input type="text" id="hotwords" placeholder="project names, people, specialist terms">
         </label>
 
         <label>
@@ -462,6 +479,9 @@
     const jobsEl = document.getElementById('jobs');
     const form = document.getElementById('jobForm');
     const statusNote = document.getElementById('statusNote');
+    const backendEl = document.getElementById('backend');
+    const modelEl = document.getElementById('model');
+    const backendStatus = document.getElementById('backendStatus');
     const refreshJobsBtn = document.getElementById('refreshJobsBtn');
     const autoRefreshToggle = document.getElementById('autoRefreshToggle');
     const liveStartBtn = document.getElementById('liveStartBtn');
@@ -476,6 +496,38 @@
     let liveQueue = Promise.resolve();
     let liveChunkCounter = 0;
     let liveInFlightChunks = 0;
+    let backendCatalog = [];
+
+    function applyBackendModels() {
+      const spec = backendCatalog.find(item => item.backend === backendEl.value);
+      if (!spec) return;
+      const previous = modelEl.value;
+      modelEl.innerHTML = (spec.models || []).map(model =>
+        `<option value="${esc(model)}">${esc(model)}</option>`
+      ).join('');
+      modelEl.value = (spec.models || []).includes(previous) ? previous : spec.default_model;
+      const readiness = spec.installed ? 'Ready' : `Not ready: ${spec.status}`;
+      backendStatus.textContent = `${readiness}. ${spec.description}`;
+      backendStatus.style.color = spec.installed ? '#166534' : '#9a3412';
+    }
+
+    async function loadBackends() {
+      try {
+        const res = await fetch('/api/backends');
+        const payload = await res.json();
+        if (!res.ok) throw new Error(payload.detail || 'Failed to load backends');
+        backendCatalog = payload.backends || [];
+        const selected = backendEl.value || 'faster-whisper';
+        backendEl.innerHTML = backendCatalog.map(spec =>
+          `<option value="${esc(spec.backend)}">${esc(spec.label)}${spec.installed ? '' : ' (not installed)'}</option>`
+        ).join('');
+        backendEl.value = backendCatalog.some(item => item.backend === selected) ? selected : 'faster-whisper';
+        applyBackendModels();
+      } catch (err) {
+        backendStatus.textContent = String(err);
+        backendStatus.style.color = '#b91c1c';
+      }
+    }
 
     function getFormats() {
       const checks = Array.from(document.querySelectorAll('#formatBox input[type=checkbox]:checked'));
@@ -665,11 +717,14 @@
       }
 
       const fd = new FormData();
+      fd.set('backend', backendEl.value);
       fd.set('model', document.getElementById('model').value);
       fd.set('language', document.getElementById('language').value);
       fd.set('device', 'auto');
       fd.set('compute_type', 'auto');
       fd.set('beam_size', document.getElementById('beam_size').value || '5');
+      fd.set('num_threads', document.getElementById('num_threads').value || '4');
+      fd.set('hotwords', document.getElementById('hotwords').value);
       fd.set('no_vad', String(document.getElementById('no_vad').checked));
       fd.set('formats', formats);
       fd.set('diarization', 'off');
@@ -871,12 +926,15 @@
       }
 
       fd.set('model', document.getElementById('model').value);
+      fd.set('backend', backendEl.value);
       fd.set('diarization', document.getElementById('diarization').value);
       fd.set('language', document.getElementById('language').value);
       fd.set('beam_size', document.getElementById('beam_size').value || '5');
       fd.set('min_speakers', document.getElementById('min_speakers').value);
       fd.set('max_speakers', document.getElementById('max_speakers').value);
       fd.set('speaker_names', document.getElementById('speaker_names').value);
+      fd.set('hotwords', document.getElementById('hotwords').value);
+      fd.set('num_threads', document.getElementById('num_threads').value || '4');
       fd.set('hf_token', document.getElementById('hf_token').value);
       fd.set('no_vad', String(document.getElementById('no_vad').checked));
       fd.set('formats', formats);
@@ -891,6 +949,8 @@
 
         statusNote.textContent = `Job ${payload.job_id} queued.`;
         form.reset();
+        backendEl.value = 'faster-whisper';
+        applyBackendModels();
         refreshJobs();
       } catch (err) {
         statusNote.textContent = String(err);
@@ -957,7 +1017,10 @@
       stopLiveSession();
     });
 
+    backendEl.addEventListener('change', applyBackendModels);
+
     setLiveButtons(false);
+    loadBackends();
     refreshJobs();
     applyAutoRefresh();
   </script>

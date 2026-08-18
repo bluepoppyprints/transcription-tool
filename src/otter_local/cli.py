@@ -28,13 +28,19 @@ def _safe_name(name: str) -> str:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="otter-local",
-        description="Transcribe local audio/video files with Whisper and optional diarization.",
+        description="Transcribe local audio/video with selectable local ASR and optional diarization.",
     )
     parser.add_argument("inputs", nargs="+", help="Path(s) to input audio/video files")
     parser.add_argument("--out-dir", default="", help="Output root directory")
     parser.add_argument("--job-id", default="", help="Optional custom job ID")
 
-    parser.add_argument("--model", default="small", help="Whisper model size")
+    parser.add_argument(
+        "--backend",
+        choices=["faster-whisper", "sherpa-qwen3", "sherpa-parakeet", "vibeasr"],
+        default="faster-whisper",
+        help="Local speech-recognition backend",
+    )
+    parser.add_argument("--model", default="small", help="Backend model name")
     parser.add_argument("--language", default=None, help="Optional language code (e.g. en)")
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     parser.add_argument(
@@ -43,6 +49,8 @@ def build_parser() -> argparse.ArgumentParser:
         default="auto",
     )
     parser.add_argument("--beam-size", type=int, default=5)
+    parser.add_argument("--num-threads", type=int, default=4)
+    parser.add_argument("--hotwords", default="", help="Comma-separated names or terms to bias")
     parser.add_argument("--no-vad", action="store_true", help="Disable VAD filtering")
 
     parser.add_argument(
@@ -86,6 +94,7 @@ def _build_options(args: argparse.Namespace) -> PipelineOptions:
     hf_token = args.hf_token or os.getenv("HUGGINGFACE_HUB_TOKEN") or os.getenv("HF_TOKEN")
     speaker_names = [name.strip() for name in args.speaker_names.split(",") if name.strip()]
     return PipelineOptions(
+        backend=args.backend,
         model=args.model,
         language=args.language,
         device=args.device,
@@ -97,6 +106,8 @@ def _build_options(args: argparse.Namespace) -> PipelineOptions:
         min_speakers=args.min_speakers,
         max_speakers=args.max_speakers,
         speaker_names=speaker_names,
+        hotwords=args.hotwords.strip(),
+        num_threads=max(1, args.num_threads),
     )
 
 

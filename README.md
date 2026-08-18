@@ -1,155 +1,94 @@
 # Otter Local Transcribe
 
-Local-first Whisper transcription toolkit with three interfaces:
-- CLI
-- Desktop GUI (Tkinter)
-- Local Web UI (FastAPI)
+A private, local-first speech-to-text app for Windows with a web UI, desktop GUI, and CLI. Audio and transcripts stay on this computer; no OpenAI API is used.
 
-## Features
-- Input formats: `mp3`, `m4a`, `wav`, `flac`, `aac`, `ogg`, `opus`, `mp4`, `mkv`, `mov`, `webm`
-- ffmpeg normalization for consistent transcription
-- Whisper transcription via `faster-whisper`
-- Optional speaker diarization via `whisperx`
-- Otter-style speaker transcript exports: `txt`, `srt`, `json`, `docx`
-- Live microphone input with incremental on-the-fly transcription in Web UI
-- Persistent web job history (SQLite)
-- Bounded web worker queue
-- Web job controls: cancel and retry
-- Queue position and ETA in web jobs list
-- Delete completed/failed/canceled jobs with artifact cleanup
-- Automatic retention cleanup for old terminal jobs
+## Installed local engines
 
-## Requirements
-- Python 3.11+
-- `ffmpeg` in `PATH`
+| Engine | Best use | Notes |
+|---|---|---|
+| Faster-Whisper | General transcription | Tiny through large-v3, Turbo, and Distil models; CPU or CUDA |
+| Qwen3-ASR 0.6B INT8 | Multilingual accuracy | Runs through sherpa-onnx on CPU |
+| Parakeet TDT 0.6B v3 INT8 | Fast European-language ASR | Runs through sherpa-onnx; includes Polish |
+| VibeVoice ASR BitNet | Experimental CPU inference | Microsoft VibeASR.cpp runtime and 1.58 GB GGUF model |
+| pyannote Community-1 | Speaker diarization | Optional; requires a Hugging Face token and acceptance of the model terms |
 
-## Install
+Other features include ffmpeg normalization, hotword/context biasing, live microphone chunks, SQLite job history, cancel/retry controls, and TXT/SRT/JSON/DOCX exports.
 
-Base:
+## Start the app
 
-```bash
-python -m pip install -e .
-```
-
-Add diarization:
-
-```bash
-python -m pip install -e .[diarization]
-```
-
-Add DOCX export:
-
-```bash
-python -m pip install -e .[docx]
-```
-
-Add local web UI:
-
-```bash
-python -m pip install -e .[web]
-```
-
-Install everything:
-
-```bash
-python -m pip install -e .[diarization,docx,web]
-```
-
-## Diarization notes
-For `--diarization on` (or Web UI diarization `on`/`auto`), set one of:
-- `HUGGINGFACE_HUB_TOKEN`
-- `HF_TOKEN`
-
-If diarization is `auto` and token/deps are missing, transcription still runs with `Speaker 1` fallback.
-
-## CLI
-
-```bash
-otter-local meeting.m4a --diarization on --formats txt,srt,json,docx
-```
-
-Optional named speakers at start:
-
-```bash
-otter-local meeting.m4a --diarization on --speaker-names "Alice,Bob"
-```
-
-## Desktop GUI
-
-```bash
-otter-local-gui
-```
-
-## Local Web UI
-
-Run from project root (Windows):
+Double-click `run_app.bat`, or from PowerShell:
 
 ```powershell
-.\run_app.ps1 -Host 127.0.0.1 -Port 7860 -Workers 2
+.\run_app.ps1
 ```
 
-```bat
-run_app.bat -Host 127.0.0.1 -Port 7860 -Workers 2
+The default address is `http://127.0.0.1:7877` with two workers. To use another port:
+
+```powershell
+.\run_app.ps1 -Port 7878
 ```
 
-The launcher opens your default browser automatically once the server is reachable.
-Use `-NoBrowser` to disable auto-open.
-You can force the exact page to open with `-LaunchUrl`, for example:
-`run_app.bat --host 127.0.0.1 --port 7877 --workers 2 --launchurl http://127.0.0.1:7877`
+The first load of a model can take a while. Once cached, Faster-Whisper models can run with no network connection.
 
-Or run server directly:
+## Install or refresh the optional local engines
 
-```bash
-otter-local-web --host 127.0.0.1 --port 7860 --workers 2
+From the project directory:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[all-local]"
+.\.venv\Scripts\python.exe scripts\install_local_backends.py --backend sherpa-qwen3 --backend sherpa-parakeet
+.\.venv\Scripts\python.exe scripts\install_local_backends.py --whisper-model turbo
+.\.venv\Scripts\python.exe scripts\install_local_backends.py --backend vibeasr
+powershell.exe -ExecutionPolicy Bypass -File scripts\install_vibeasr.ps1 -Bootstrap
 ```
 
-Open in browser:
+`-Bootstrap` downloads a checksum-verified portable WinLibs compiler, clones Microsoft's official VibeASR.cpp source with its submodules, and builds `asr_infer.exe`. It does not modify the system-wide compiler or PATH.
 
-```text
-http://127.0.0.1:7860
+Model files are stored under `.models`; VibeASR source/runtime files are under `.tools`. The compiler is kept in `%LOCALAPPDATA%\OtterLocalTools` because MinGW cannot link correctly from a path containing spaces. Hugging Face models use the normal user cache.
+
+## Speaker diarization
+
+Community-1 is installed as the diarization engine, but Hugging Face requires each user to accept the model conditions. Visit the Community-1 model page, accept access, create a read token, then paste that token into the web UI or set `HF_TOKEN`.
+
+With diarization set to `Auto`, transcription still succeeds with a single-speaker fallback when no token is available. With it set to `On`, a missing token or model access produces an explicit error.
+
+## CLI examples
+
+```powershell
+.\.venv\Scripts\otter-local.exe meeting.m4a --backend faster-whisper --model turbo --diarization auto
+.\.venv\Scripts\otter-local.exe interview.wav --backend sherpa-qwen3 --model qwen3-0.6b-int8 --hotwords "Blue Poppy,project name"
+.\.venv\Scripts\otter-local.exe polish.wav --backend sherpa-parakeet --model parakeet-tdt-0.6b-v3-int8 --diarization off
 ```
 
-Web UI behavior:
-- Upload one or more media files
-- Choose model, diarization mode, and output formats
-- Optionally provide speaker names at job start (comma-separated)
-- Start/stop live microphone capture and see transcript updates every few seconds
-- Track overall and current-file progress
-- View queue position and ETA per queued/running job
-- Cancel queued/running jobs
-- Retry completed/failed/canceled jobs
-- Delete completed/failed/canceled jobs and their stored files
-- Manual refresh by default, with optional slower auto-refresh toggle
-- Download generated transcript files directly
-- Keep job history after server restarts
+Desktop GUI:
 
-Live mode notes:
-- Live mode prioritizes speed and currently runs diarization as `off`
-- On stop, live transcript exports are generated in selected formats
-- Live `txt` export is auto-cleaned to remove repeated fragments and keep full sentences
-
-Clean repeated live fragments (post-process):
-
-```bash
-python scripts/clean_live_transcript.py output/your_transcript.txt
+```powershell
+.\.venv\Scripts\otter-local-gui.exe
 ```
 
-Keep cleaned partial lines too (instead of dropping incomplete ones):
+## Troubleshooting
 
-```bash
-python scripts/clean_live_transcript.py output/your_transcript.txt --keep-partial
+### WinError 10013 or “cannot find the appropriate snapshot folder”
+
+This means a model was not cached and the process was not allowed to open the network socket. Close any old app instance, start the app normally with `run_app.bat`, and retry. You can also preload a model outside the server:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\install_local_backends.py --whisper-model large-v3
 ```
 
-## Output paths
-- CLI/Desktop outputs: `output/transcribe/...`
-- Web UI outputs: `output/web/results/<job-id>/...`
-- Web uploads (temporary persisted files): `output/web/uploads/<job-id>/...`
-- Web job database: `output/web/jobs.db`
-- Retention policy: keeps up to 200 terminal jobs and prunes terminal jobs older than 30 days
+### Port 7877 is already in use
 
-## Example transcript style
+Use the already-open page, stop the old process, or choose a different port:
 
-```text
-[00:00:03] Speaker 1: Thanks everyone for joining.
-[00:00:07] Speaker 2: Sure, let's start with the roadmap.
+```powershell
+.\run_app.ps1 -Port 7878
 ```
+
+### Output locations
+
+- Web results: `output/web/results/<job-id>`
+- Web uploads: `output/web/uploads/<job-id>`
+- Web database: `output/web/jobs.db`
+- CLI/Desktop results: `output/transcribe/<job-id>`
+
+The web history keeps up to 200 terminal jobs and prunes terminal jobs older than 30 days.

@@ -7,11 +7,11 @@ import tempfile
 import threading
 import wave
 from collections.abc import Callable
-from collections import OrderedDict
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from .backends import transcribe_audio
 from .types import PipelineOptions, TranscriptResult, TranscriptSegment
 
 
@@ -35,7 +35,8 @@ class TranscriptionCancelled(RuntimeError):
 
 
 ProgressCallback = Callable[[float, str], bool | None]
-_MODEL_CACHE_LOCAL = threading.local()
+_DIARIZATION_LOCAL = threading.local()
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _notify_progress(
@@ -80,6 +81,13 @@ def _resolve_device_compute(options: PipelineOptions) -> tuple[str, str]:
 
 @lru_cache(maxsize=1)
 def _resolve_ffmpeg_binary() -> str:
+    if os.name == "nt":
+        portable_root = _PROJECT_ROOT / ".tools" / "ffmpeg"
+        if portable_root.exists():
+            portable = next(portable_root.glob("**/ffmpeg.exe"), None)
+            if portable is not None:
+                return str(portable)
+
     names = ["ffmpeg.exe", "ffmpeg"] if os.name == "nt" else ["ffmpeg"]
     for name in names:
         resolved = shutil.which(name)
@@ -109,7 +117,7 @@ def _resolve_ffmpeg_binary() -> str:
     )
 
 
-def _normalize_audio(input_file: Path, temp_dir: Path) -> Path:
+def _normalize_audio(input_file: Path, temp_dir: Path, sample_rate: int = 16000) -> Path:
     ffmpeg_bin = _resolve_ffmpeg_binary()
     normalized = temp_dir / f"{input_file.stem}.wav"
     cmd = [
@@ -123,14 +131,14 @@ def _normalize_audio(input_file: Path, temp_dir: Path) -> Path:
         "-ac",
         "1",
         "-ar",
-        "16000",
+        str(sample_rate),
         str(normalized),
     ]
     subprocess.run(cmd, check=True)
     return normalized
 
 
-def _is_native_16k_mono_pcm_wav(input_file: Path) -> bool:
+def _is_native_mono_pcm_wav(input_file: Path, sample_rate: int) -> bool:
     if input_file.suffix.lower() != ".wav":
         return False
 
@@ -138,88 +146,12 @@ def _is_native_16k_mono_pcm_wav(input_file: Path) -> bool:
         with wave.open(str(input_file), "rb") as wav_f:
             return (
                 wav_f.getnchannels() == 1
-                and wav_f.getframerate() == 16000
+                and wav_f.getframerate() == sample_rate
+                and wav_f.getsampwidth() == 2
                 and wav_f.getcomptype() == "NONE"
             )
     except Exception:
         return False
-
-
-def _get_model_cache() -> dict[tuple[str, str, str], Any]:
-    cache = getattr(_MODEL_CACHE_LOCAL, "models", None)
-    if cache is None:
-        cache = OrderedDict()
-        _MODEL_CACHE_LOCAL.models = cache
-    return cache
-
-
-def _get_whisper_model(model_name: str, device: str, compute_type: str) -> Any:
-    try:
-        from faster_whisper import WhisperModel
-    except ImportError as exc:
-        raise RuntimeError(
-            "faster-whisper is not installed. Install with: pip install faster-whisper"
-        ) from exc
-
-    cache = _get_model_cache()
-    key = (model_name, device, compute_type)
-    model = cache.get(key)
-    if model is not None:
-        cache.move_to_end(key)
-        return model
-
-    model = WhisperModel(model_name, device=device, compute_type=compute_type)
-    cache[key] = model
-    if len(cache) > 2:
-        cache.popitem(last=False)
-    return model
-
-
-def _transcribe_with_whisper(
-    audio_file: Path,
-    options: PipelineOptions,
-    progress_callback: ProgressCallback | None = None,
-) -> tuple[list[TranscriptSegment], str, float]:
-    device, compute_type = _resolve_device_compute(options)
-    model = _get_whisper_model(options.model, device=device, compute_type=compute_type)
-
-    seg_iter, info = model.transcribe(
-        str(audio_file),
-        language=options.language,
-        beam_size=options.beam_size,
-        vad_filter=options.vad_filter,
-    )
-    duration_hint = float(getattr(info, "duration", 0.0) or 0.0)
-    _notify_progress(progress_callback, 0.12, "transcribing")
-
-    segments: list[TranscriptSegment] = []
-    segment_count = 0
-    for seg in seg_iter:
-        segment_count += 1
-        confidence = None
-        if hasattr(seg, "no_speech_prob") and seg.no_speech_prob is not None:
-            confidence = max(0.0, min(1.0, 1.0 - float(seg.no_speech_prob)))
-
-        segments.append(
-            TranscriptSegment(
-                start=float(seg.start),
-                end=float(seg.end),
-                text=str(seg.text).strip(),
-                speaker="Speaker 1",
-                confidence=confidence,
-            )
-        )
-        if duration_hint > 0:
-            ratio = max(0.0, min(1.0, float(seg.end) / duration_hint))
-            _notify_progress(progress_callback, 0.12 + (ratio * 0.72), "transcribing")
-        else:
-            fallback_ratio = min(1.0, segment_count / 120.0)
-            _notify_progress(progress_callback, 0.12 + (fallback_ratio * 0.72), "transcribing")
-
-    language = info.language or (options.language or "unknown")
-    duration = duration_hint
-    _notify_progress(progress_callback, 0.84, "transcription_complete")
-    return segments, language, duration
 
 
 def _diarize_segments(
@@ -240,43 +172,64 @@ def _diarize_segments(
         return base_segments
 
     try:
-        import whisperx
+        import torch
+        from pyannote.audio import Pipeline
     except ImportError as exc:
         if options.diarization_mode == "on":
             raise RuntimeError(
-                "Diarization requested but whisperx is missing. Install with: pip install whisperx"
+                "Diarization requested but pyannote.audio is missing. "
+                "Install with: pip install pyannote.audio"
             ) from exc
         return base_segments
 
     _notify_progress(progress_callback, 0.88, "diarizing")
     device, _ = _resolve_device_compute(options)
-    diarization_device = "cuda" if device == "cuda" else "cpu"
+    cache_key = (token, device)
+    cached_key = getattr(_DIARIZATION_LOCAL, "key", None)
+    diarize_model = getattr(_DIARIZATION_LOCAL, "model", None)
+    if diarize_model is None or cached_key != cache_key:
+        try:
+            diarize_model = Pipeline.from_pretrained(
+                "pyannote/speaker-diarization-community-1",
+                token=token,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "Could not load pyannote Community-1. Confirm that the Hugging Face "
+                "token is valid and that you accepted the model access conditions. "
+                f"Original error: {exc}"
+            ) from exc
+        if device == "cuda":
+            diarize_model.to(torch.device("cuda"))
+        _DIARIZATION_LOCAL.key = cache_key
+        _DIARIZATION_LOCAL.model = diarize_model
 
-    audio = whisperx.load_audio(str(audio_file))
-    diarize_model = whisperx.DiarizationPipeline(
-        use_auth_token=token,
-        device=diarization_device,
-    )
+    import numpy as np
+
+    with wave.open(str(audio_file), "rb") as wav_f:
+        sample_rate = wav_f.getframerate()
+        channels = wav_f.getnchannels()
+        sample_width = wav_f.getsampwidth()
+        raw_audio = wav_f.readframes(wav_f.getnframes())
+    if sample_width != 2:
+        raise RuntimeError("Diarization requires normalized 16-bit PCM audio")
+    waveform_array = np.frombuffer(raw_audio, dtype=np.int16).astype(np.float32) / 32768.0
+    waveform_array = waveform_array.reshape(-1, channels).T
+    waveform = torch.from_numpy(waveform_array)
+
     diarized = diarize_model(
-        audio,
+        {"waveform": waveform, "sample_rate": sample_rate},
         min_speakers=options.min_speakers,
         max_speakers=options.max_speakers,
     )
+    annotation = getattr(diarized, "exclusive_speaker_diarization", None)
+    if annotation is None:
+        annotation = getattr(diarized, "speaker_diarization", diarized)
 
-    aligned_input = {
-        "segments": [
-            {
-                "start": seg.start,
-                "end": seg.end,
-                "text": seg.text,
-            }
-            for seg in base_segments
-        ]
-    }
-
-    assigned = whisperx.assign_word_speakers(diarized, aligned_input)
-    assigned_segments = assigned.get("segments", [])
-    if not assigned_segments:
+    turns: list[tuple[float, float, str]] = []
+    for turn, _, speaker in annotation.itertracks(yield_label=True):
+        turns.append((float(turn.start), float(turn.end), str(speaker)))
+    if not turns:
         _notify_progress(progress_callback, 0.95, "diarization_complete")
         return base_segments
 
@@ -295,17 +248,20 @@ def _diarize_segments(
         return speaker_map[raw]
 
     rebuilt: list[TranscriptSegment] = []
-    for idx, seg_data in enumerate(assigned_segments):
-        fallback = base_segments[min(idx, len(base_segments) - 1)]
-        raw_speaker = str(seg_data.get("speaker") or fallback.speaker).strip() or "unknown"
-        speaker = map_speaker(raw_speaker)
+    for segment in base_segments:
+        overlaps: dict[str, float] = {}
+        for turn_start, turn_end, raw_speaker in turns:
+            overlap = max(0.0, min(segment.end, turn_end) - max(segment.start, turn_start))
+            if overlap > 0:
+                overlaps[raw_speaker] = overlaps.get(raw_speaker, 0.0) + overlap
+        raw_speaker = max(overlaps, key=overlaps.get) if overlaps else segment.speaker
         rebuilt.append(
             TranscriptSegment(
-                start=float(seg_data.get("start", fallback.start)),
-                end=float(seg_data.get("end", fallback.end)),
-                text=str(seg_data.get("text", fallback.text)).strip(),
-                speaker=speaker,
-                confidence=fallback.confidence,
+                start=segment.start,
+                end=segment.end,
+                text=segment.text,
+                speaker=map_speaker(raw_speaker),
+                confidence=segment.confidence,
             )
         )
 
@@ -329,18 +285,20 @@ def transcribe_file(
     _notify_progress(progress_callback, 0.02, "preparing")
     with tempfile.TemporaryDirectory(prefix="otter-local-") as tmp:
         temp_dir = Path(tmp)
+        target_sample_rate = 24000 if options.backend == "vibeasr" else 16000
         _notify_progress(progress_callback, 0.05, "normalizing")
-        if _is_native_16k_mono_pcm_wav(input_file):
+        if _is_native_mono_pcm_wav(input_file, target_sample_rate):
             audio_for_pipeline = input_file
             _notify_progress(progress_callback, 0.10, "normalization_skipped")
         else:
-            audio_for_pipeline = _normalize_audio(input_file, temp_dir)
+            audio_for_pipeline = _normalize_audio(input_file, temp_dir, target_sample_rate)
             _notify_progress(progress_callback, 0.10, "normalized")
-        segments, language, duration = _transcribe_with_whisper(
+        segments, language, duration = transcribe_audio(
             audio_for_pipeline,
             options,
             progress_callback=progress_callback,
         )
+        _notify_progress(progress_callback, 0.84, "transcription_complete")
         segments = _diarize_segments(
             audio_for_pipeline,
             segments,

@@ -23,6 +23,7 @@ class TranscriptResult:
 
 @dataclass(slots=True)
 class PipelineOptions:
+    backend: str = "faster-whisper"
     model: str = "small"
     language: str | None = None
     device: str = "auto"
@@ -34,4 +35,6 @@ class PipelineOptions:
     min_speakers: int | None = None
     max_speakers: int | None = None
     speaker_names: list[str] = field(default_factory=list)
+    hotwords: str = ""
+    num_threads: int = 4
     keep_temp: bool = False

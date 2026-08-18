@@ -2,7 +2,7 @@ param(
     [Alias("Host")]
     [string]$BindHost = "127.0.0.1",
     [int]$Port = 7877,
-    [int]$Workers = 8,
+    [int]$Workers = 16,
     [switch]$NoBrowser,
     [int]$BrowserTimeoutSeconds = 20,
     [Alias("BrowserUrl", "OpenUrl")]
@@ -16,7 +16,17 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ProjectRoot
 
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+$PortableFfmpeg = Get-ChildItem -Path (Join-Path $ProjectRoot ".tools\ffmpeg") -Filter "ffmpeg.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($PortableFfmpeg) {
+    $env:PATH = "$($PortableFfmpeg.Directory.FullName);$env:PATH"
+}
+
+$VenvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
+if (Test-Path $VenvPython) {
+    $PythonExe = $VenvPython
+} elseif (Get-Command python -ErrorAction SilentlyContinue) {
+    $PythonExe = "python"
+} else {
     Write-Error "Python is not installed or not available in PATH."
     exit 1
 }
@@ -133,7 +143,7 @@ if (-not $NoBrowser) {
 
 $exitCode = 0
 try {
-    python -m otter_local.web --host $BindHost --port $Port --workers $Workers
+    & $PythonExe -m otter_local.web --host $BindHost --port $Port --workers $Workers
     $exitCode = $LASTEXITCODE
 } finally {
     if ($openBrowserJob) {
