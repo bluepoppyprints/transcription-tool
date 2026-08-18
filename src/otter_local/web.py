@@ -17,6 +17,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 
+from .backends import BACKEND_SPECS, backend_catalog
 from .exporters import collapse_segments, export_docx, export_json, export_srt, export_txt
 from .live_text_cleaner import clean_transcript_file
 from .pipeline import TranscriptionCancelled, transcribe_file
@@ -137,6 +138,7 @@ def _parse_optional_int(value: str, label: str) -> int | None:
 
 def _build_pipeline_options(
     *,
+    backend: str,
     model: str,
     language: str,
     diarization: str,
@@ -147,9 +149,13 @@ def _build_pipeline_options(
     min_speakers: str,
     max_speakers: str,
     speaker_names: str,
+    hotwords: str,
+    num_threads: int,
     hf_token: str,
     force_diarization_off: bool = False,
 ) -> PipelineOptions:
+    if backend not in BACKEND_SPECS:
+        raise HTTPException(status_code=400, detail="Invalid ASR backend")
     if diarization not in {"auto", "on", "off"}:
         raise HTTPException(status_code=400, detail="Invalid diarization mode")
     if device not in {"auto", "cpu", "cuda"}:
@@ -158,6 +164,8 @@ def _build_pipeline_options(
         raise HTTPException(status_code=400, detail="Invalid compute type")
     if beam_size < 1 or beam_size > 10:
         raise HTTPException(status_code=400, detail="beam_size must be between 1 and 10")
+    if num_threads < 1 or num_threads > 32:
+        raise HTTPException(status_code=400, detail="num_threads must be between 1 and 32")
 
     min_speakers_value = _parse_optional_int(min_speakers, "min_speakers")
     max_speakers_value = _parse_optional_int(max_speakers, "max_speakers")
@@ -170,6 +178,7 @@ def _build_pipeline_options(
 
     diarization_mode = "off" if force_diarization_off else diarization
     return PipelineOptions(
+        backend=backend,
         model=model.strip() or "small",
         language=language.strip() or None,
         device=device,
@@ -181,6 +190,8 @@ def _build_pipeline_options(
         min_speakers=min_speakers_value,
         max_speakers=max_speakers_value,
         speaker_names=[name.strip() for name in speaker_names.split(",") if name.strip()],
+        hotwords=hotwords.strip(),
+        num_threads=num_threads,
     )
 
 
@@ -806,7 +817,10 @@ def _process_job(job_id: str) -> None:
             live.current_file = file_name
             live.current_file_progress = 0.0
             live.current_file_started_at = datetime.now().isoformat(timespec="seconds")
-            _append_log(live, f"Transcribing {file_name}...")
+            _append_log(
+                live,
+                f"Transcribing {file_name} with {options.backend} / {options.model}...",
+            )
             _persist_job_locked(live)
 
         if not input_path.exists():
@@ -952,12 +966,20 @@ def diagnostics() -> dict:
         "live_routes": live_routes,
         "has_live_start": "/api/live/start" in live_routes,
         "route_count": len(routes),
+        "backends": backend_catalog(),
     }
+
+
+@app.get("/api/backends")
+def list_backends() -> dict:
+    _initialize_runtime()
+    return {"backends": backend_catalog()}
 
 
 @app.post("/api/transcribe")
 async def submit_job(
     files: list[UploadFile] = File(...),
+    backend: str = Form("faster-whisper"),
     model: str = Form("small"),
     language: str = Form(""),
     diarization: str = Form("auto"),
@@ -968,6 +990,8 @@ async def submit_job(
     min_speakers: str = Form(""),
     max_speakers: str = Form(""),
     speaker_names: str = Form(""),
+    hotwords: str = Form(""),
+    num_threads: int = Form(4),
     hf_token: str = Form(""),
     formats: str = Form("txt,srt,json,docx"),
 ) -> dict:
@@ -982,6 +1006,7 @@ async def submit_job(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     options = _build_pipeline_options(
+        backend=backend,
         model=model,
         language=language,
         diarization=diarization,
@@ -992,6 +1017,8 @@ async def submit_job(
         min_speakers=min_speakers,
         max_speakers=max_speakers,
         speaker_names=speaker_names,
+        hotwords=hotwords,
+        num_threads=num_threads,
         hf_token=hf_token,
     )
 
@@ -1031,6 +1058,7 @@ async def submit_job(
 
 @app.post("/api/live/start")
 def start_live_session(
+    backend: str = Form("faster-whisper"),
     model: str = Form("small"),
     language: str = Form(""),
     diarization: str = Form("off"),
@@ -1041,6 +1069,8 @@ def start_live_session(
     min_speakers: str = Form(""),
     max_speakers: str = Form(""),
     speaker_names: str = Form(""),
+    hotwords: str = Form(""),
+    num_threads: int = Form(4),
     hf_token: str = Form(""),
     formats: str = Form("txt,srt,json,docx"),
 ) -> dict:
@@ -1052,6 +1082,7 @@ def start_live_session(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     options = _build_pipeline_options(
+        backend=backend,
         model=model,
         language=language,
         diarization=diarization,
@@ -1062,6 +1093,8 @@ def start_live_session(
         min_speakers=min_speakers,
         max_speakers=max_speakers,
         speaker_names=speaker_names,
+        hotwords=hotwords,
+        num_threads=num_threads,
         hf_token=hf_token,
         force_diarization_off=True,
     )

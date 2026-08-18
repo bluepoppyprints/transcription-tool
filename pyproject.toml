@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "otter-local-transcribe"
-version = "0.2.0"
-description = "Local Whisper transcription app with CLI, desktop GUI, and local web UI."
+version = "0.3.0"
+description = "Fully local multi-backend transcription app with CLI, desktop GUI, and web UI."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -14,12 +14,23 @@ dependencies = [
 
 [project.optional-dependencies]
 diarization = [
-  "whisperx>=3.2.0",
+  "pyannote.audio>=4.0.0",
+]
+local-backends = [
+  "sherpa-onnx>=1.13.5",
 ]
 docx = [
   "python-docx>=1.1.2",
 ]
 web = [
+  "fastapi>=0.115.0",
+  "uvicorn>=0.30.0",
+  "python-multipart>=0.0.9",
+]
+all-local = [
+  "pyannote.audio>=4.0.0",
+  "sherpa-onnx>=1.13.5",
+  "python-docx>=1.1.2",
   "fastapi>=0.115.0",
   "uvicorn>=0.30.0",
   "python-multipart>=0.0.9",
