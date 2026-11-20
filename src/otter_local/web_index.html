@@ -77,7 +77,7 @@
       color: var(--muted);
     }
 
-    input, select {
+    input, select, textarea {
       width: 100%;
       padding: 10px 12px;
       border: 1px solid var(--edge);
@@ -86,6 +86,11 @@
       color: var(--ink);
       font-family: 'IBM Plex Mono', monospace;
       font-size: 0.9rem;
+    }
+
+    .job-description-input {
+      min-height: 74px;
+      resize: vertical;
     }
 
     .row {
@@ -276,6 +281,34 @@
       font-family: 'IBM Plex Mono', monospace;
     }
 
+    .job-description {
+      margin: 0;
+      padding: 9px 10px;
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      background: rgba(15,118,110,0.06);
+      color: #334155;
+      font-size: 0.86rem;
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
+
+    .job-parameters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .job-parameter {
+      border: 1px solid var(--edge);
+      border-radius: 999px;
+      background: rgba(248,250,252,0.9);
+      color: #334155;
+      padding: 3px 8px;
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 0.73rem;
+    }
+
     .actions {
       display: flex;
       gap: 8px;
@@ -352,6 +385,11 @@
     <section class="card">
       <h2>New Transcription Job</h2>
       <form class="panel" id="jobForm">
+        <label>
+          Job description (optional)
+          <textarea class="job-description-input" id="job_description" name="job_description" maxlength="2000" placeholder="Meeting, project, client, or any notes that identify this job"></textarea>
+        </label>
+
         <label>
           Media files
           <input type="file" id="files" name="files" multiple required>
@@ -592,6 +630,29 @@
 
         const logs = (job.logs || []).slice(-8).map(line => esc(line)).join('\\n');
         const error = job.error ? `<div style="color:#b91c1c;font-weight:600">${esc(job.error)}</div>` : '';
+        const params = job.parameters || {};
+        const parameterItems = [
+          ['Backend', params.backend],
+          ['Model', params.model],
+          ['Language', params.language || 'automatic'],
+          ['Diarization', params.diarization_mode],
+          ['Device', params.device],
+          ['Compute', params.compute_type],
+          ['Beam', params.beam_size],
+          ['VAD', params.vad_filter === false ? 'off' : 'on'],
+          ['Threads', params.num_threads],
+          ['Min speakers', params.min_speakers],
+          ['Max speakers', params.max_speakers],
+          ['Speaker names', (params.speaker_names || []).join(', ')],
+          ['Hotwords', params.hotwords],
+          ['Outputs', (job.formats || []).join(', ')],
+        ].filter(([, value]) => value !== undefined && value !== null && value !== '');
+        const parameterSummary = parameterItems.map(([label, value]) =>
+          `<span class="job-parameter"><strong>${esc(label)}:</strong> ${esc(value)}</span>`
+        ).join('');
+        const description = job.description
+          ? `<p class="job-description">${esc(job.description)}</p>`
+          : '';
 
         return `
           <article class="job">
@@ -599,6 +660,8 @@
               <span>${esc(job.job_id)} - ${esc(job.created_at)}</span>
               <span class="state state-${esc(job.status)}">${esc(job.status)}</span>
             </div>
+            ${description}
+            <div class="job-parameters">${parameterSummary}</div>
             <div class="progress"><span style="width:${pct}%"></span></div>
             ${currentFile}
             ${queueInfo}
@@ -925,6 +988,7 @@
         fd.append('files', file);
       }
 
+      fd.set('job_description', document.getElementById('job_description').value);
       fd.set('model', document.getElementById('model').value);
       fd.set('backend', backendEl.value);
       fd.set('diarization', document.getElementById('diarization').value);

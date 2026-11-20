@@ -43,6 +43,7 @@ RETENTION_MAX_JOBS = 200
 RETENTION_MAX_DAYS = 30
 LIVE_RECONCILE_SECONDS = 2.5
 LIVE_APPEND_EPSILON_SECONDS = 0.15
+MAX_JOB_DESCRIPTION_LENGTH = 2000
 
 
 @dataclass(slots=True)
@@ -67,6 +68,7 @@ class JobState:
     created_at: str
     status: str
     total_files: int
+    description: str = ""
     processed_files: int = 0
     current_file: str | None = None
     current_file_progress: float = 0.0
@@ -134,6 +136,16 @@ def _parse_optional_int(value: str, label: str) -> int | None:
     if parsed < 1:
         raise HTTPException(status_code=400, detail=f"{label} must be >= 1")
     return parsed
+
+
+def _normalize_job_description(value: str) -> str:
+    description = value.strip()
+    if len(description) > MAX_JOB_DESCRIPTION_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Job description must be {MAX_JOB_DESCRIPTION_LENGTH} characters or fewer",
+        )
+    return description
 
 
 def _build_pipeline_options(
@@ -225,6 +237,7 @@ def _db_init() -> None:
                 created_at TEXT NOT NULL,
                 status TEXT NOT NULL,
                 total_files INTEGER NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
                 processed_files INTEGER NOT NULL,
                 current_file TEXT,
                 current_file_progress REAL NOT NULL DEFAULT 0,
@@ -270,6 +283,8 @@ def _db_init() -> None:
             conn.execute(
                 "ALTER TABLE jobs ADD COLUMN processing_seconds_total REAL NOT NULL DEFAULT 0"
             )
+        if "description" not in existing_columns:
+            conn.execute("ALTER TABLE jobs ADD COLUMN description TEXT NOT NULL DEFAULT ''")
         conn.commit()
     finally:
         conn.close()
@@ -326,16 +341,17 @@ def _persist_job_locked(job: JobState) -> None:
         conn.execute(
             """
             INSERT INTO jobs (
-                job_id, created_at, status, total_files, processed_files,
+                job_id, created_at, status, total_files, description, processed_files,
                 current_file, current_file_progress, current_file_started_at,
                 started_at, finished_at, processing_seconds_total,
                 cancel_requested, error,
                 logs_json, files_json, options_json, formats_json, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(job_id) DO UPDATE SET
                 created_at = excluded.created_at,
                 status = excluded.status,
                 total_files = excluded.total_files,
+                description = excluded.description,
                 processed_files = excluded.processed_files,
                 current_file = excluded.current_file,
                 current_file_progress = excluded.current_file_progress,
@@ -356,6 +372,7 @@ def _persist_job_locked(job: JobState) -> None:
                 job.created_at,
                 job.status,
                 job.total_files,
+                job.description,
                 job.processed_files,
                 job.current_file,
                 float(job.current_file_progress),
@@ -415,6 +432,7 @@ def _load_state_locked() -> None:
             created_at=str(row["created_at"]),
             status=status,
             total_files=int(row["total_files"]),
+            description=str(row["description"] or ""),
             processed_files=int(row["processed_files"]),
             current_file=str(row["current_file"]) if row["current_file"] else None,
             current_file_progress=float(row["current_file_progress"] or 0.0),
@@ -741,12 +759,19 @@ def _job_to_dict(
     queue_position: int | None = None,
     eta_seconds: float | None = None,
 ) -> dict:
+    payload = _job_payloads.get(job.job_id)
+    parameters = _serialize_options(payload.options) if payload is not None else {}
+    parameters.pop("hf_token", None)
+    formats = list(payload.formats) if payload is not None else []
     return {
         "job_id": job.job_id,
         "created_at": job.created_at,
         "started_at": job.started_at,
         "finished_at": job.finished_at,
         "status": job.status,
+        "description": job.description,
+        "parameters": parameters,
+        "formats": formats,
         "total_files": job.total_files,
         "processed_files": job.processed_files,
         "current_file": job.current_file,
@@ -979,6 +1004,7 @@ def list_backends() -> dict:
 @app.post("/api/transcribe")
 async def submit_job(
     files: list[UploadFile] = File(...),
+    job_description: str = Form(""),
     backend: str = Form("faster-whisper"),
     model: str = Form("small"),
     language: str = Form(""),
@@ -999,6 +1025,8 @@ async def submit_job(
 
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
+
+    description = _normalize_job_description(job_description)
 
     try:
         resolved_formats = _resolve_formats(formats)
@@ -1044,6 +1072,7 @@ async def submit_job(
         created_at=datetime.now().isoformat(timespec="seconds"),
         status="queued",
         total_files=len(local_files),
+        description=description,
     )
     _append_log(job, f"Queued {len(local_files)} file(s)")
 
@@ -1482,6 +1511,7 @@ def retry_job(job_id: str) -> dict:
             created_at=datetime.now().isoformat(timespec="seconds"),
             status="queued",
             total_files=len(new_payload.files),
+            description=source_job.description,
         )
         _append_log(new_job, f"Queued retry from {job_id}")
 
